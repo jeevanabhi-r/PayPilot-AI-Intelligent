@@ -91,8 +91,10 @@ test('unified product deduplication removes repeated item IDs and titles', () =>
 });
 
 test('empty live provider results leave curated demo discovery available', async () => {
+  const entries = [];
   const search = createProductService({
     liveSearch: async () => ({ provider: 'ebay-browse', products: [] }),
+    logger: { info: (message, details) => entries.push({ message, details }) },
   });
   const result = await search('Samsung phone');
   assert.equal(result.provider, 'hybrid-product-service');
@@ -103,13 +105,27 @@ test('empty live provider results leave curated demo discovery available', async
   assert.ok(result.products.every((product) => product.listingUrl === null && product.retailerUrl === null));
   assert.ok(result.message.includes('No live offers'));
   assert.ok(result.products.some((product) => product.brand === 'Samsung' && product.category === 'Smartphones'));
+  assert.deepEqual(entries, [{
+    message: '[product-service] Using demo fallback',
+    details: {
+      provider: 'ebay-browse',
+      reason: 'no-valid-live-offers',
+      providerProductCount: 0,
+      liveCount: 0,
+      demoCount: result.demoCount,
+    },
+  }]);
 });
 
 test('live provider failures keep demo discovery available and report the failure', async () => {
   const warnings = [];
+  const entries = [];
   const search = createProductService({
     liveSearch: async () => { throw new Error('provider unavailable'); },
-    logger: { warn: (message) => warnings.push(message) },
+    logger: {
+      warn: (message) => warnings.push(message),
+      info: (message, details) => entries.push({ message, details }),
+    },
   });
   const result = await search('Samsung phone');
   assert.equal(result.liveSearchFailed, true);
@@ -119,6 +135,7 @@ test('live provider failures keep demo discovery available and report the failur
   assert.match(result.message, /Live eBay search failed/);
   assert.match(result.message, /clearly labeled sample data/);
   assert.equal(warnings.length, 1);
+  assert.equal(entries[0].details.reason, 'provider-error');
 });
 
 test('curated catalogue covers the requested device categories', () => {

@@ -96,7 +96,7 @@ test('Browse API errors report status without logging credentials or access toke
   assert.equal(JSON.stringify(logger.entries).includes(credentials.EBAY_CLIENT_SECRET), false);
 });
 
-test('Browse API error diagnostics redact credentials and authorization-shaped values', async () => {
+test('2xx Browse API error diagnostics redact credentials and authorization-shaped values', async () => {
   const logger = captureLogger();
   let callCount = 0;
   const search = createEbayProductSearch({
@@ -115,8 +115,7 @@ test('Browse API error diagnostics redact credentials and authorization-shaped v
     },
   });
 
-  const result = await search('wireless headphones');
-  assert.deepEqual(result.products, []);
+  await assert.rejects(search('wireless headphones'), /eBay search returned provider errors \(200\)/);
   const logs = JSON.stringify(logger.entries);
   assert.equal(logs.includes('sandbox-access-token'), false);
   assert.equal(logs.includes(credentials.EBAY_CLIENT_ID), false);
@@ -137,6 +136,7 @@ test('empty Browse API result returns no offers and logs response shape', async 
         total: 0,
         limit: 12,
         offset: 0,
+        itemSummaries: [],
       }, timeline);
     },
   });
@@ -149,8 +149,8 @@ test('empty Browse API result returns no offers and logs response shape', async 
   const requestLog = logger.entries.find((entry) => entry.message === '[eBay Browse] Search request');
   assert.deepEqual(requestLog.details, { query: 'wireless headphones', marketplaceId: 'EBAY_US' });
   const bodyLog = logger.entries.find((entry) => entry.message === '[eBay Browse] Search response body metadata');
-  assert.deepEqual(bodyLog.details.topLevelProperties, ['href', 'total', 'limit', 'offset']);
-  assert.equal(bodyLog.details.itemSummariesExists, false);
+  assert.deepEqual(bodyLog.details.topLevelProperties, ['href', 'total', 'limit', 'offset', 'itemSummaries']);
+  assert.equal(bodyLog.details.itemSummariesExists, true);
   assert.equal(bodyLog.details.itemSummariesCount, 0);
   assert.deepEqual(
     { total: bodyLog.details.total, limit: bodyLog.details.limit, offset: bodyLog.details.offset },
@@ -172,7 +172,7 @@ test('empty Browse API result returns no offers and logs response shape', async 
     titleRelevanceFailureCount: 0,
     duplicateOfferCount: 0,
     duplicateTitleCount: 0,
-    summariesFieldPresent: false,
+    summariesFieldPresent: true,
     missingListingUrlCount: 0,
   });
 });
@@ -394,7 +394,7 @@ test('seller username is extracted when available but missing seller data does n
   assert.equal(logs.includes('100'), false);
 });
 
-test('missing itemSummaries is reported distinctly and returns no offers', async () => {
+test('2xx Browse API error payload is logged and treated as provider failure', async () => {
   const logger = captureLogger();
   let callCount = 0;
   const search = createEbayProductSearch({
@@ -406,9 +406,25 @@ test('missing itemSummaries is reported distinctly and returns no offers', async
     },
   });
 
-  assert.deepEqual((await search('wireless headphones')).products, []);
+  await assert.rejects(search('wireless headphones'), /eBay search returned provider errors \(200\)/);
   const bodyLog = logger.entries.find((entry) => entry.message === '[eBay Browse] Search response body metadata');
   assert.deepEqual(bodyLog.details.topLevelProperties, ['total', 'errors']);
   assert.equal(bodyLog.details.itemSummariesExists, false);
   assert.equal(bodyLog.details.itemSummariesCount, 0);
+  const errorLog = logger.entries.find((entry) => entry.message === '[eBay Browse] API error');
+  assert.equal(errorLog.details.errorId, 9);
+  assert.equal(errorLog.details.message, 'Provider response');
+});
+
+test('successful Browse API response without itemSummaries is treated as malformed', async () => {
+  let callCount = 0;
+  const search = createEbayProductSearch({
+    env: credentials,
+    fetchImpl: async () => {
+      callCount += 1;
+      return callCount === 1 ? response(200, tokenPayload()) : response(200, { total: 0 });
+    },
+  });
+
+  await assert.rejects(search('wireless headphones'), /did not contain item summaries/);
 });

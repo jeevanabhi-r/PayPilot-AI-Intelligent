@@ -55,11 +55,25 @@ export function createProductService({
       .filter((product) => isOfferRelevantToQuery(product, query));
     const products = deduplicateProducts([...liveProducts, ...demoMatches]);
     const demoOnly = liveProducts.length === 0;
+    const demoCount = products.filter((product) => product.dataType === 'DEMO').length;
+    if (demoOnly) {
+      logger.info?.('[product-service] Using demo fallback', {
+        provider: liveSearchFailed ? 'unavailable' : liveResult?.provider || 'unknown',
+        reason: liveSearchFailed
+          ? 'provider-error'
+          : liveResult?.provider === 'not-configured'
+            ? 'not-configured'
+            : 'no-valid-live-offers',
+        providerProductCount: Array.isArray(liveResult?.products) ? liveResult.products.length : 0,
+        liveCount: liveProducts.length,
+        demoCount,
+      });
+    }
     return {
       provider: 'hybrid-product-service',
       products,
       liveCount: liveProducts.length,
-      demoCount: products.filter((product) => product.dataType === 'DEMO').length,
+      demoCount,
       liveSearchFailed,
       ...(demoOnly ? {
         message: liveSearchFailed

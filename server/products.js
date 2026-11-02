@@ -130,8 +130,14 @@ export function createEbayProductSearch({ env = process.env, fetchImpl = globalT
     logBrowseResponseBody(response, payload, logger, [env.EBAY_CLIENT_ID, env.EBAY_CLIENT_SECRET, token]);
     if (!response.ok) throw new Error(`eBay search failed (${response.status})`);
     if (!payload) throw new Error('eBay search returned an invalid JSON response.');
+    if (Array.isArray(payload.errors) && payload.errors.length) {
+      throw new Error(`eBay search returned provider errors (${response.status})`);
+    }
+    if (!Array.isArray(payload.itemSummaries)) {
+      throw new Error('eBay search response did not contain item summaries.');
+    }
     const data = payload;
-    const summaries = Array.isArray(data.itemSummaries) ? data.itemSummaries : [];
+    const summaries = data.itemSummaries;
     const objects = summaries.filter((item) => item && typeof item === 'object');
     const seenItemIds = new Set();
     const seenTitles = new Set();
