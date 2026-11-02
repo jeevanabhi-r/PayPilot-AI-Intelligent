@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owns(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+    function allowedWishlistSource(source) {
+      return source in ['eBay Browse API', 'PayPilot Curated Demo Catalogue'];
+    }
+    match /users/{uid} {
+      allow read, create, update, delete: if owns(uid);
+      match /wishlist/{itemId} {
+        function validLiveListing(data) {
+          return data.dataType == 'LIVE'
+            && data.external == true
+            && data.source == 'eBay Browse API'
+            && data.keys().hasAny(['listingUrl'])
+            && data.listingUrl is string
+            && data.listingUrl.matches('^https://(www\\.)?ebay\\.(com|co\\.uk|ca|de|fr|it|es|com\\.au|at|ch|nl|ie|be|pl|com\\.hk|com\\.sg|in|com\\.my|ph|com\\.mx)/itm/[^/?#]+(/[^?#]*)?(\\?[^#]*)?(#[^ ]*)?$');
+        }
+        function validDemoListing(data) {
+          return data.dataType == 'DEMO'
+            && data.external == false
+            && data.source == 'PayPilot Curated Demo Catalogue'
+            && (!data.keys().hasAny(['listingUrl']) || data.listingUrl == null)
+            && (!data.keys().hasAny(['retailerUrl']) || data.retailerUrl == null);
+        }
+        function validWishlistItem() {
+          let data = request.resource.data;
+          return data.keys().hasAll(['external', 'name', 'price', 'currency', 'source', 'createdAt'])
+            && data.keys().hasOnly(['productId', 'dataType', 'title', 'name', 'brand', 'price', 'currency', 'image', 'condition', 'merchant', 'listingUrl', 'retailerUrl', 'category', 'source', 'availability', 'external', 'createdAt'])
+            && allowedWishlistSource(data.source)
+            && (validLiveListing(data) || validDemoListing(data))
+            && data.name is string && data.name.size() > 0 && data.name.size() <= 300
+            && (!data.keys().hasAny(['productId']) || (data.productId is string && data.productId.size() > 0 && data.productId.size() <= 200))
+            && (!data.keys().hasAny(['title']) || (data.title is string && data.title.size() > 0 && data.title.size() <= 300))
+            && (!data.keys().hasAny(['category']) || (data.category is string && data.category.size() <= 100))
+            && data.price is number && data.price > 0 && data.price <= 1000000
+            && data.currency is string && data.currency.matches('^[A-Z]{3}$')
+            && data.source is string && data.source.size() <= 100
+            && data.createdAt == request.time;
+        }
+        allow read: if owns(uid);
+        // LIVE verification is server-authored; clients may save curated DEMO items only.
+        allow create: if owns(uid) && validWishlistItem() && request.resource.data.dataType == 'DEMO';
+        allow update: if false;
+        allow delete: if owns(uid);
+      }
+      match /priceTracking/{productKey} {
+        allow read, write: if false;
+        match /snapshots/{snapshotId} {
+          allow read, write: if false;
+        }
+      }
+      match /priceAlerts/{alertId} {
+        allow read, write: if false;
+      }
+      match /chats/{chatId} {
+        allow read: if owns(uid);
+        allow write: if false;
+        match /messages/{messageId} {
+          allow read: if owns(uid);
+          allow write: if false;
+        }
+      }
+      match /transactions/{transactionId} {
+        // Created only by the verified backend after a PayPal capture.
+        allow read: if owns(uid);
+        allow write: if false;
+      }
+      match /orders/{orderId} {
+        // Lifecycle is maintained by the verified backend.
+        allow read: if owns(uid);
+        allow write: if false;
+      }
+    }
+  }
+}

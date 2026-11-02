@@ -1,0 +1,1 @@
+Do not overwrite your existing .env file. Merge only the VITE_FIREBASE_* values from .env.example into it, preserving PayPal and Groq settings. Never share or commit .env.

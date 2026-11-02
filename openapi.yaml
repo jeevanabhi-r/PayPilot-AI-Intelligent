@@ -1,0 +1,126 @@
+openapi: 3.0.3
+info:
+  title: PayPilot AI API
+  version: 1.1.0
+  description: Trusted shopping recommendations and PayPal Sandbox checkout API. Use this contract with APIMatic for validation, documentation, and SDK generation.
+servers:
+  - url: http://localhost:3001
+    description: Local development
+security:
+  - FirebaseBearer: []
+paths:
+  /api/health:
+    get:
+      security: []
+      summary: Service health
+      responses:
+        '200': { description: API is responding }
+  /api/catalog:
+    get:
+      security: []
+      summary: List PayPilot marketplace products
+      responses:
+        '200':
+          description: Verified internal catalog
+          content: { application/json: { schema: { $ref: '#/components/schemas/CatalogResponse' } } }
+  /api/plan:
+    post:
+      summary: Produce a catalog-bound shopping recommendation
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [message], properties: { message: { type: string, minLength: 1, maxLength: 2500 } } } } }
+      responses:
+        '200': { description: Recommendation, content: { application/json: { schema: { $ref: '#/components/schemas/PlanResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/products/search:
+    get:
+      summary: Search externally verified retailer offers
+      parameters:
+        - { in: query, name: q, required: true, schema: { type: string, minLength: 2, maxLength: 120 } }
+        - { in: query, name: budget, schema: { type: number, minimum: 0 } }
+      responses:
+        '200': { description: Provider-sourced offers, or an explicit configuration notice }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/compare:
+    post:
+      summary: Compare verified product fields against an optional budget
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [products], properties: { budget: { type: number }, products: { type: array, minItems: 2, maxItems: 5, items: { $ref: '#/components/schemas/Product' } } } } } }
+      responses:
+        '200': { description: Budget-aware comparison }
+        '400': { description: Fewer than two products supplied }
+  /api/research:
+    post:
+      summary: Research provider-verified external offers with constrained AI explanation
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [query], properties: { query: { type: string, minLength: 2, maxLength: 120 }, budget: { type: number, minimum: 0 } } } } }
+      responses:
+        '200': { description: Verified offers and a non-fabricated research explanation }
+  /api/orders:
+    post:
+      summary: Create a PayPal Sandbox order using the trusted product price
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema: { type: string, maxLength: 128 }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [productId, approved], properties: { productId: { type: string }, approved: { type: boolean, enum: [true] } } } } }
+      responses:
+        '201': { description: PayPal order created }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { description: Duplicate checkout request }
+        '503': { description: PayPal or server authentication is not configured }
+  /api/orders/{orderId}/capture:
+    post:
+      summary: Capture and independently verify an approved PayPal order
+      parameters:
+        - { in: path, name: orderId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Verified completed transaction }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Order is not owned by the caller or does not exist }
+        '409': { description: Already captured or payment verification failed }
+  /api/orders/{orderId}/cancel:
+    post:
+      summary: Mark an unapproved local checkout as cancelled
+      parameters:
+        - { in: path, name: orderId, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Cancellation recorded }
+components:
+  securitySchemes:
+    FirebaseBearer: { type: http, scheme: bearer, bearerFormat: Firebase-ID-token }
+  responses:
+    Unauthorized: { description: A valid Firebase ID token is required }
+    TooManyRequests: { description: Rate limit exceeded }
+  schemas:
+    Product:
+      type: object
+      required: [id, name, category, price]
+      properties:
+        id: { type: string, example: headphones }
+        name: { type: string, example: Studio Wireless Headphones }
+        category: { type: string, example: Electronics }
+        price: { type: number, format: float, example: 79.99 }
+        description: { type: string }
+    CatalogResponse:
+      type: object
+      properties:
+        products: { type: array, items: { $ref: '#/components/schemas/Product' } }
+        source: { type: string, example: paypilot-marketplace }
+    PlanResponse:
+      type: object
+      properties:
+        engine: { type: string, enum: [groq, rules] }
+        plan:
+          type: object
+          properties:
+            product: { $ref: '#/components/schemas/Product' }
+            budget: { type: number, nullable: true }
+            reason: { type: string }
+            withinBudget: { type: boolean }
