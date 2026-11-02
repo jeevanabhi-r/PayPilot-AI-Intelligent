@@ -10,6 +10,8 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20
+      - key: VITE_API_BASE_URL
+        value: https://paypilot-ai-api-4h3x.onrender.com
       - key: APP_ORIGIN
         sync: false
       - key: PAYPAL_CLIENT_ID
