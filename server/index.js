@@ -454,4 +454,4 @@ app.post('/api/orders/:id/cancel', requireUser, async (req, res) => { const db =
 const dirname = path.dirname(fileURLToPath(import.meta.url)); const dist = path.resolve(dirname, '../dist');
 app.use(express.static(dist));
 app.get('*', (req, res, next) => req.path.startsWith('/api/') ? next() : res.sendFile(path.join(dist, 'index.html'), (error) => { if (error) res.status(404).send('Build the frontend with npm run build first.'); }));
-app.listen(port, () => console.log(`PayPilot API listening on port ${port}`));
+app.listen(port, '0.0.0.0', () => console.log(`PayPilot API listening on port ${port}`));
